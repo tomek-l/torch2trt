@@ -545,7 +545,25 @@ def torch2trt(module,
                 outputs = (outputs,)
             ctx.mark_outputs(outputs, output_names)
 
-    builder.max_workspace_size = max_workspace_size
+    #ak
+    """Note to self. Even when commenting this out i am getting
+      File "tools/deploy/profile.py", line 126, in <module>
+    main()
+  File "tools/deploy/profile.py", line 83, in main
+    model = torch2trt(model, [dummy_samples])#,use_onnx=True)
+  File "/opt/conda/lib/python3.6/site-packages/torch2trt-0.2.0-py3.6-linux-x86_64.egg/torch2trt/torch2trt.py", line 549, in torch2trt
+    builder.fp16_mode = fp16_mode
+AttributeError: 'tensorrt.tensorrt.Builder' object has no attribute 'fp16_mode'
+
+
+
+    apparently this is deprecated in the tensorRT version 8.0 that I have. (https://github.com/NVIDIA-AI-IOT/torch2trt/issues/557)  however, i don't think i should just comment it all out still probs important to have, i just have to figure out where I need tos et them in the new version. also don't think i should downgrade it like that github link suggests. looks like
+    tensorrt.BuilderFlag = FP16 
+    class tensorrt.IBuilderConfig.max_workspace_size 
+    from here: https://docs.nvidia.com/deeplearning/tensorrt/api/python_api/infer/Core/BuilderConfig.html#tensorrt.IBuilderConfig
+    not sure about others
+"""
+    #builder.max_workspace_size = max_workspace_size
     builder.fp16_mode = fp16_mode
     builder.max_batch_size = max_batch_size
     builder.strict_type_constraints = strict_type_constraints

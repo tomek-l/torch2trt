@@ -50,7 +50,7 @@ def convert_interpolate_plugin(ctx):
                                                   
 @tensorrt_converter('torch.nn.functional.interpolate', enabled=trt_version() >= '7.1')
 @tensorrt_converter('torch.nn.functional.upsample', enabled=trt_version() >= '7.1')
-def convert_interpolate_trt7(ctx):                                     
+def convert_interpolate_trt7(ctx):           
     #parse args                     
     input = get_arg(ctx, 'input', pos=0, default=None) 
     size = get_arg(ctx, 'size', pos=1, default=None)
@@ -86,7 +86,11 @@ def convert_interpolate_trt7(ctx):
         layer.resize_mode=trt.ResizeMode.NEAREST
 
     if align_corners != None:
-        layer.align_corners = align_corners
+        #ak  
+        #layer.align_corners = align_corners
+        # https://pytorch.org/docs/stable/generated/torch.nn.functional.interpolate.html
+        #  https://docs.nvidia.com/deeplearning/tensorrt/api/python_api/infer/Graph/Layers.html#iresizelayer
+        layer.coordinate_transformation = trt.ResizeCoordinateTransformation.ALIGN_CORNERS 
 
     output._trt = layer.get_output(0)
 
