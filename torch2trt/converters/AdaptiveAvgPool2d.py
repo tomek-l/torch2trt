@@ -11,8 +11,17 @@ def convert_AdaptiveAvgPool2d(ctx):
     input_trt = add_missing_trt_tensors(ctx.network, [input])[0]
 
     output_size = module.output_size
+    
     if not isinstance(output_size, tuple):
         output_size = (output_size, ) * 2
+    
+    #ak: by def of none here: https://pytorch.org/docs/stable/generated/torch.nn.AdaptiveAvgPool2d.html
+    if output_size[-2] is None:
+        output_size = (input_trt.shape[-2], output_size[-1],)
+        
+    if output_size[-1] is None:
+        output_size = (output_size[-2],input_trt.shape[-1],)
+    
 
     stride = (input_trt.shape[-2] // output_size[-2], input_trt.shape[-1] // output_size[-1])
 
