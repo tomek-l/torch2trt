@@ -8,6 +8,9 @@ def convert_Conv_trt7(ctx):
     module = ctx.method_args[0]
     input = ctx.method_args[1]
     input_trt = add_missing_trt_tensors(ctx.network, [input])[0]
+    if len(input_trt.shape) < 3:
+        input_trt = broadcast_trt_tensors(ctx.network, [input_trt], 3)[0]
+        
     output = ctx.method_return
 
     input_dim = input.dim() - 2
