@@ -148,6 +148,17 @@ def add_missing_trt_tensors(network, tensors):
         if isinstance(t, float) or isinstance(t, int):
             shape = (1,)
             scalar = t * torch.ones(shape, dtype=dtype).cpu().numpy()
+            
+            
+            #ak
+            print("above add_constant: dtype is",dtype)
+            try:
+                scalar = trt.Weights(scalar)
+            except ValueError: 
+                #if weight is unsupported data type (ie i64) default to float32
+                scalar = trt.Weights(scalar.astype('float32'))
+            
+            
             trt_tensor = network.add_constant(shape, scalar).get_output(0)
         elif hasattr(t, "_trt"):
             trt_tensor = t._trt
@@ -163,8 +174,27 @@ def add_missing_trt_tensors(network, tensors):
                 else:
                     break
             shape = tuple(t.shape[num_preceding_ones:])
-            
             weight = t.detach().cpu().numpy()
+            
+            """
+            #ak
+            print(type(shape))
+            print(shape)
+            print(type(weight))
+            
+            shape = trt.Dims(shape)
+            print(type(shape))
+            """
+            try:
+                weight = trt.Weights(weight)
+            except ValueError: 
+                #if weight is unsupported data type (ie i64) default to float32
+                print("Caught unsuported data type error")
+                weight = trt.Weights(weight.astype('float32'))
+            #print(type(weight))
+            
+            
+            
             t._trt = network.add_constant(shape, weight).get_output(0)
             trt_tensor = t._trt
 
@@ -296,7 +326,8 @@ def attach_converter(ctx, method, converter, method_str):
             ctx.method_return = outputs
             ctx.method_str = method_str
 
-            #             print('%s' % (converter.__name__,))
+#             print('%s' % (converter.__name__,))
+            #print('Attaching', converter, converter["converter"])
             converter["converter"](ctx)
 
             # convert to None so conversion will fail for unsupported layers
@@ -356,6 +387,7 @@ class LayerNamingNetworkWrapper(object):
         kwargs = ["%s=%s" % (key, arg_str(arg)) for key, arg in self._ctx.method_kwargs.items()]
         layer.name = "[%s #%d] %s(%s)" % (layer.type.name, self._layer_counts[layer.type.name],
                                           self._ctx.method_str, ", ".join(args + kwargs))
+        #print('Adding %s' % layer.name)
 
     def __getattr__(self, name):
         attr = getattr(self._network, name)
@@ -556,28 +588,11 @@ def torch2trt(module,
                 outputs = (outputs,)
             ctx.mark_outputs(outputs, output_names)
 
-    #ak
-    """Note to self. Even when commenting this out i am getting
-      File "tools/deploy/profile.py", line 126, in <module>
-    main()
-  File "tools/deploy/profile.py", line 83, in main
-    model = torch2trt(model, [dummy_samples])#,use_onnx=True)
-  File "/opt/conda/lib/python3.6/site-packages/torch2trt-0.2.0-py3.6-linux-x86_64.egg/torch2trt/torch2trt.py", line 549, in torch2trt
-    builder.fp16_mode = fp16_mode
-AttributeError: 'tensorrt.tensorrt.Builder' object has no attribute 'fp16_mode'
-
-
-
-    apparently this is deprecated in the tensorRT version 8.0 that I have. (https://github.com/NVIDIA-AI-IOT/torch2trt/issues/557)  however, i don't think i should just comment it all out still probs important to have, i just have to figure out where I need tos et them in the new version. also don't think i should downgrade it like that github link suggests. looks like
-    tensorrt.BuilderFlag = FP16 
-    class tensorrt.IBuilderConfig.max_workspace_size 
-    from here: https://docs.nvidia.com/deeplearning/tensorrt/api/python_api/infer/Core/BuilderConfig.html#tensorrt.IBuilderConfig
-    not sure about others
-"""
-    #builder.max_workspace_size = max_workspace_size
-    builder.fp16_mode = fp16_mode
+    config = builder.create_builder_config()
+    config.max_workspace_size = max_workspace_size
+    config.flags = fp16_mode << int(trt.BuilderFlag.FP16)
+    config.flags = strict_type_constraints << int(trt.BuilderFlag.STRICT_TYPES)
     builder.max_batch_size = max_batch_size
-    builder.strict_type_constraints = strict_type_constraints
 
     if int8_mode:
 
@@ -592,7 +607,7 @@ AttributeError: 'tensorrt.tensorrt.Builder' object has no attribute 'fp16_mode'
             inputs, int8_calib_dataset, batch_size=int8_calib_batch_size, algorithm=int8_calib_algorithm
         )
 
-    engine = builder.build_cuda_engine(network)
+    engine = builder.build_engine(network, config)
 
     module_trt = TRTModule(engine, input_names, output_names)
 
