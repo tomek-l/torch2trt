@@ -86,11 +86,7 @@ def convert_interpolate_trt7(ctx):
         layer.resize_mode=trt.ResizeMode.NEAREST
 
     if align_corners != None:
-        #ak  
-        #layer.align_corners = align_corners
-        # https://pytorch.org/docs/stable/generated/torch.nn.functional.interpolate.html
-        #  https://docs.nvidia.com/deeplearning/tensorrt/api/python_api/infer/Graph/Layers.html#iresizelayer
-        layer.coordinate_transformation = trt.ResizeCoordinateTransformation.ALIGN_CORNERS 
+        layer.align_corners = align_corners
 
     output._trt = layer.get_output(0)
 

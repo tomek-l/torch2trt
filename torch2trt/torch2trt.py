@@ -296,7 +296,7 @@ def attach_converter(ctx, method, converter, method_str):
             ctx.method_return = outputs
             ctx.method_str = method_str
 
-            #             print('%s' % (converter.__name__,))
+            #print(converter)#             print('%s' % (converter.__name__,))
             converter["converter"](ctx)
 
             # convert to None so conversion will fail for unsupported layers
@@ -574,7 +574,7 @@ AttributeError: 'tensorrt.tensorrt.Builder' object has no attribute 'fp16_mode'
     from here: https://docs.nvidia.com/deeplearning/tensorrt/api/python_api/infer/Core/BuilderConfig.html#tensorrt.IBuilderConfig
     not sure about others
 """
-    #builder.max_workspace_size = max_workspace_size
+    builder.max_workspace_size = max_workspace_size
     builder.fp16_mode = fp16_mode
     builder.max_batch_size = max_batch_size
     builder.strict_type_constraints = strict_type_constraints
