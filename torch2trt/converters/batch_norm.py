@@ -19,7 +19,11 @@ def convert_batch_norm_trt7(ctx):
     bias = bias.detach().cpu().numpy() - running_mean.detach().cpu().numpy() * scale
     power = np.ones_like(scale)
     
-    layer = ctx.network.add_scale_nd(input_trt, trt.ScaleMode.CHANNEL, bias, scale, power, 0)
+    if ctx.network.has_implicit_batch_dimension:
+        layer = ctx.network.add_scale_nd(input_trt, trt.ScaleMode.CHANNEL, bias, scale, power, 0) # channel axis should be zero when we are not using explicit batch dimensions
+    else:
+        layer = ctx.network.add_scale_nd(input_trt, trt.ScaleMode.CHANNEL, bias, scale, power, 1) # channel axis should be zero when we are not using explicit batch dimensions
+
     output._trt = layer.get_output(0)
 
 

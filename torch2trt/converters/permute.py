@@ -16,8 +16,11 @@ def convert_permute(ctx):
         
     assert(permutation[0] == 0)  # cannot move batch dim
     
-    trt_permutation = tuple([p - 1 for p in permutation])[1:]
-    
+    if ctx.network.has_implicit_batch_dimension:
+        trt_permutation = tuple([p - 1 for p in permutation])[1:] #this substracts one for everything cuz only 3 dimenions c,h,w is going through (batch implicit)
+    else:
+        trt_permutation = permutation #for explicit batch, we can keep the same permutation
+
     layer = ctx.network.add_shuffle(input_trt)
     layer.second_transpose = tuple(trt_permutation)
    

@@ -6,6 +6,8 @@ import io
 from collections import defaultdict
 import importlib
 
+from packaging import version
+
 from .calibration import (
     TensorBatchDataset,
     DatasetCalibrator,
@@ -471,9 +473,15 @@ class TRTModule(torch.nn.Module):
             outputs[i] = output
             bindings[idx] = output.data_ptr()
 
+        #print("setting shape input to",inputs[0].shape[1:])
+        #self.context.set_shape_input(0,inputs[0].shape[1:])
+        #self.context.set_binding_shape(0,inputs[0].shape[1:])
+
         for i, input_name in enumerate(self.input_names):
             idx = self.engine.get_binding_index(input_name)
             bindings[idx] = inputs[i].contiguous().data_ptr()
+
+
 
         self.context.execute_async(
             batch_size, bindings, torch.cuda.current_stream().cuda_stream
@@ -494,7 +502,7 @@ def torch2trt(module,
               inputs, 
               input_names=None, 
               output_names=None, 
-              log_level=trt.Logger.ERROR, 
+              log_level=trt.Logger.WARNING, 
               max_batch_size=1,
               fp16_mode=False, 
               max_workspace_size=1<<25, 
@@ -505,6 +513,7 @@ def torch2trt(module,
               int8_calib_algorithm=DEFAULT_CALIBRATION_ALGORITHM,
               int8_calib_batch_size=1,
               use_onnx=False,
+              opt_shape_param=None,
               **kwargs):
     
     # capture arguments to provide to context
@@ -545,35 +554,83 @@ def torch2trt(module,
         parser.parse(onnx_bytes)
         
     else:
-        network = builder.create_network()
+        #network = builder.create_network() 
+        network = builder.create_network(1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH)) #needed for dynamic shape
+        #when i do this i get: 
+        #[TensorRT] ERROR: [CONVOLUTION #1] torch.nn.Conv2d.forward(Conv2d(3, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1)), tensor(shape=[1, 3, 224, 224], dtype=torch.float32)): at least 4 dimensions are required for input.
+        #[TensorRT] ERROR: Parameter check failed at: ../builder/Network.cpp::addScaleNd::771, condition: nbSpatialDims == 2 || nbSpatialDims == 3
+        #after the get_layer_output in the first conv layer. i'm not sure why...
+
         with ConversionContext(network, torch2trt_kwargs=kwargs) as ctx:
 
-            ctx.add_inputs(inputs, input_names)
+           # ctx.add_inputs(inputs, input_names)
+            #maybe put this in the wrapper? but then it's gonna add inputs for like torch.zeros or __hash__
 
             outputs = module(*inputs)
 
             if not isinstance(outputs, tuple) and not isinstance(outputs, list):
                 outputs = (outputs,)
             ctx.mark_outputs(outputs, output_names)
+    
+    
+    ####FROM torch2trt_dynamic
+            torch.cuda.empty_cache()
+            if version.parse(trt.__version__) < version.parse('8'):
+                builder.max_workspace_size = max_workspace_size
+                builder.max_batch_size = max_batch_size
+                builder.strict_type_constraints = strict_type_constraints
 
-    #ak
-    """Note to self. Even when commenting this out i am getting
-      File "tools/deploy/profile.py", line 126, in <module>
-    main()
-  File "tools/deploy/profile.py", line 83, in main
-    model = torch2trt(model, [dummy_samples])#,use_onnx=True)
-  File "/opt/conda/lib/python3.6/site-packages/torch2trt-0.2.0-py3.6-linux-x86_64.egg/torch2trt/torch2trt.py", line 549, in torch2trt
-    builder.fp16_mode = fp16_mode
-AttributeError: 'tensorrt.tensorrt.Builder' object has no attribute 'fp16_mode'
+            config = builder.create_builder_config()
+            config.max_workspace_size = max_workspace_size
+            profile = builder.create_optimization_profile()
 
+            if input_names is None:
+                input_names = ['input_%d' % i for i in range(len(inputs))]
+            for input_index, input_tensor in enumerate(inputs):
+                if opt_shape_param is not None:
+                    min_shape = tuple(opt_shape_param[input_index][0][:])
+                    opt_shape = tuple(opt_shape_param[input_index][1][:])
+                    max_shape = tuple(opt_shape_param[input_index][2][:])
+                else:
+                    opt_shape = tuple(input_tensor.shape)
+                    min_shape = opt_shape
+                    max_shape = opt_shape
+                profile.set_shape(input_names[input_index], min_shape, opt_shape,
+                                max_shape)
+            config.add_optimization_profile(profile)
 
+    if fp16_mode:
+        if version.parse(trt.__version__) < version.parse('8'):
+            builder.fp16_mode = fp16_mode
+        config.set_flag(trt.BuilderFlag.FP16)
 
-    apparently this is deprecated in the tensorRT version 8.0 that I have. (https://github.com/NVIDIA-AI-IOT/torch2trt/issues/557)  however, i don't think i should just comment it all out still probs important to have, i just have to figure out where I need tos et them in the new version. also don't think i should downgrade it like that github link suggests. looks like
-    tensorrt.BuilderFlag = FP16 
-    class tensorrt.IBuilderConfig.max_workspace_size 
-    from here: https://docs.nvidia.com/deeplearning/tensorrt/api/python_api/infer/Core/BuilderConfig.html#tensorrt.IBuilderConfig
-    not sure about others
-"""
+    if int8_mode:
+        # default to use input tensors for calibration
+        if int8_calib_dataset is None:
+            int8_calib_dataset = TensorBatchDataset(inputs_in)
+
+        config.set_flag(trt.BuilderFlag.INT8)
+        config.int8_calibrator = DatasetCalibrator(
+            input_names,
+            profile,
+            inputs_in,
+            int8_calib_dataset,
+            batch_size=opt_shape[0],
+            algorithm=int8_calib_algorithm)
+        config.set_calibration_profile(profile)
+        if version.parse(trt.__version__) < version.parse('8'):
+            builder.int8_mode = int8_mode
+        builder.int8_calibrator = config.int8_calibrator
+
+    engine = builder.build_engine(network, config)
+
+    module_trt = TRTModule(engine, input_names, output_names)
+
+    if keep_network:
+        module_trt.network = network
+
+    return module_trt
+    """
     builder.max_workspace_size = max_workspace_size
     builder.fp16_mode = fp16_mode
     builder.max_batch_size = max_batch_size
@@ -600,6 +657,7 @@ AttributeError: 'tensorrt.tensorrt.Builder' object has no attribute 'fp16_mode'
         module_trt.network = network
 
     return module_trt
+"""
 
 
 # DEFINE ALL CONVERSION FUNCTIONS

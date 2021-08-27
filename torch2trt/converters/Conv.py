@@ -7,9 +7,29 @@ from torch2trt.module_test import add_module_test
 def convert_Conv_trt7(ctx):
     module = ctx.method_args[0]
     input = ctx.method_args[1]
-    input_trt = add_missing_trt_tensors(ctx.network, [input])[0]
-    if len(input_trt.shape) < 3:
-        input_trt = broadcast_trt_tensors(ctx.network, [input_trt], 3)[0]
+
+    if ctx.network.num_inputs==0:
+        if ctx.network.has_implicit_batch_dimension:
+            input_trt = ctx.network.add_input(
+                        name='input_0',
+                        shape=tuple(input.shape)[1:],
+                        dtype=torch_dtype_to_trt(input.dtype),
+                    )
+        else:
+            input_trt = ctx.network.add_input(
+                name='input_0',
+                shape=(1,1,64,-1),#tuple(input.shape),#[1:],
+                dtype=torch_dtype_to_trt(input.dtype),
+            )
+
+    else:
+        input_trt = add_missing_trt_tensors(ctx.network, [input])[0]
+
+    #actually shouldn't need the following lines, bc it was to fix the original input shape [1,1,224,224] from being broadcasted down to [224,224]
+    # but that should be handled in add_inputs shape=tuple(torch_input.shape)[1:]
+    #problems is that tensor from add inputs isn't coming here
+    # if len(input_trt.shape) < 3:
+    #     input_trt = broadcast_trt_tensors(ctx.network, [input_trt], 3)[0]
         
     output = ctx.method_return
 
