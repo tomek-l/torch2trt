@@ -19,7 +19,13 @@ def convert_view(ctx):
     if ctx.network.has_implicit_batch_dimension:
         layer.reshape_dims = tuple(output.shape[1:])
     else:
-        layer.reshape_dims = tuple(output.shape[1:])
+        print("calling convert_view with dynamic shape")
+        layer.reshape_dims = (1,0,256) # 0 is the dynamic dimension (just copied from input)
+        #tuple(output.shape)
+        #new_shape_trt = ctx.network.add_constant(trt.Dims([3]), trt.Weights(np.array((1,-1,256)))).get_output(0)
+        # output_trt = add_missing_trt_tensors(ctx.network,[output])[0]
+        # layer.set_input(1,ctx.network.add_shape(output_trt).get_output(0))
+
 
 
     output._trt = layer.get_output(0)

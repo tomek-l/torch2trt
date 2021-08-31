@@ -493,6 +493,38 @@ class TRTModule(torch.nn.Module):
 
         return outputs
 
+    #DYNAMIC INPUT SHAPE FORWARD VERSION!
+    """ def forward(self, *inputs):
+        bindings = [None] * (len(self.input_names) + len(self.output_names))
+
+        #inputs have to be specified before you can get_binding_shape of output!
+        for i, input_name in enumerate(self.input_names):
+            idx = self.engine.get_binding_index(input_name)
+
+            self.context.set_binding_shape(idx, tuple(inputs[i].shape))
+            bindings[idx] = inputs[i].contiguous().data_ptr()
+
+        # create output tensors
+        outputs = [None] * len(self.output_names)
+        for i, output_name in enumerate(self.output_names):
+            idx = self.engine.get_binding_index(output_name)
+            dtype = torch_dtype_from_trt(self.engine.get_binding_dtype(idx))
+            shape = tuple(self.context.get_binding_shape(idx))
+
+            device = torch_device_from_trt(self.engine.get_location(idx))
+            output = torch.empty(size=shape, dtype=dtype, device=device)
+            outputs[i] = output
+            bindings[idx] = output.data_ptr()
+
+        self.context.execute_async_v2(bindings,
+                                      torch.cuda.current_stream().cuda_stream)
+
+        outputs = tuple(outputs)
+        if len(outputs) == 1:
+            outputs = outputs[0]
+
+        return outputs"""
+
     def enable_profiling(self):
         if not self.context.profiler:
             self.context.profiler = trt.Profiler()
@@ -554,8 +586,8 @@ def torch2trt(module,
         parser.parse(onnx_bytes)
         
     else:
-        #network = builder.create_network() 
-        network = builder.create_network(1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH)) #needed for dynamic shape
+        network = builder.create_network() 
+        #network = builder.create_network(1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH)) #needed for dynamic shape
         #when i do this i get: 
         #[TensorRT] ERROR: [CONVOLUTION #1] torch.nn.Conv2d.forward(Conv2d(3, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1)), tensor(shape=[1, 3, 224, 224], dtype=torch.float32)): at least 4 dimensions are required for input.
         #[TensorRT] ERROR: Parameter check failed at: ../builder/Network.cpp::addScaleNd::771, condition: nbSpatialDims == 2 || nbSpatialDims == 3
@@ -572,7 +604,7 @@ def torch2trt(module,
                 outputs = (outputs,)
             ctx.mark_outputs(outputs, output_names)
     
-    
+    """
     ####FROM torch2trt_dynamic
             torch.cuda.empty_cache()
             if version.parse(trt.__version__) < version.parse('8'):
@@ -657,7 +689,7 @@ def torch2trt(module,
         module_trt.network = network
 
     return module_trt
-"""
+   
 
 
 # DEFINE ALL CONVERSION FUNCTIONS

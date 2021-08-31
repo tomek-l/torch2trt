@@ -11,6 +11,7 @@ def convert_lstm(ctx):
     max_seq_length = input_tensor.shape[1] if module.batch_first else input_tensor.shape[0]
     op = trt.RNNOperation.LSTM
     layer = ctx.network.add_rnn_v2(input_tensor._trt, layer_count, hidden_size, max_seq_length, op)
+    #i think it's saying max sequence length has to be same as input_tensor[1] and it's not rn, bc input_tensor is -1
     if module.bidirectional is True:
         layer.direction = trt.RNNDirection.BIDIRECTION
     for i in range(layer_count):
